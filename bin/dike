@@ -1,0 +1,66 @@
+#! /usr/bin/env ruby
+require "yaml"
+require "orderedhash"
+
+### TODO objectify - this is crap
+
+### parse argv
+  help = ARGV.delete("-h") || ARGV.delete("--help") || ARGV.delete("help")
+
+  a, b, *ignored = ARGV
+
+  if help or a.nil?
+    puts "dike (directory || old_dump new_dump)"
+    exit 42
+  end
+
+### load/determine files
+  if b
+    old_dump = a
+    new_dump = b
+  else
+    directory = a
+    Dir.chdir directory do
+      list = Dir.glob "*"
+      list = list.grep(%r/^[0-9]+$/).map{|entry| entry.to_i}
+      a, b = list.min, list.max
+      abort "not enough dumps" unless((a and b) and (a != b))
+      old_dump = File.join directory, a.to_s
+      new_dump = File.join directory, b.to_s
+    end
+  end
+
+### compute stats
+  a = open(old_dump){|fd| YAML.load fd}
+  a_index = {}
+  a.each{|record| a_index[record["trace"]] = record}
+
+  b = open(new_dump){|fd| YAML.load fd}
+  b_index = {}
+  b.each{|record| b_index[record["trace"]] = record}
+
+### generate report
+  report = []
+
+  (a_index.keys + b_index.keys).uniq.each do |trace|
+    record = OrderedHash.new
+
+    a_record = a_index[trace] || {}
+    b_record = b_index[trace] || {}
+
+    klass = a_record["class"] || b_record["class"]
+    count = b_record["count"].to_i - a_record["count"].to_i
+
+    next unless count > 0 
+
+    record["class"] = klass 
+    record["count"] = count 
+    record["trace"] = trace.clone
+
+    report << record
+  end
+
+  report =
+    report.sort_by{|record| [-record["count"], record["class"]]}
+
+  y report
